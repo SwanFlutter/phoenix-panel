@@ -1,0 +1,41 @@
+# Binaries
+/bin/
+phoenix
+phoenix.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+
+# Env & secrets
+.env
+.env.local
+*.pem
+*.key
+*.crt
+
+# Data
+*.db
+*.db-journal
+*.sqlite
+/data/
+
+# Frontend
+/web/node_modules/
+/web/dist/
+/web/.vite/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/logs/

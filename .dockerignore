@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.local
+*.md
+!README.md
+bin/
+data/
+logs/
+web/node_modules/
+web/dist/
+*.db
+*.sqlite
+*.log
+Dockerfile
+docker-compose.yml
+.github/

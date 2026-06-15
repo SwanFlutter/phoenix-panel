@@ -1,0 +1,57 @@
+# ============================================================
+# PHOENIX PANEL — Docker Compose
+#
+# Default: panel + PostgreSQL.
+# To run with SQLite instead, set PHOENIX_DB_DRIVER=sqlite in .env and you can
+# stop/remove the postgres service (the panel will use the mounted ./data vol).
+# ============================================================
+
+services:
+  panel:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: phoenix-panel:latest
+    container_name: phoenix-panel
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override DB host so the panel reaches the compose postgres service.
+      PHOENIX_DB_HOST: postgres
+    ports:
+      - "${PHOENIX_PORT:-8080}:8080"
+    volumes:
+      - phoenix_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - phoenix
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: phoenix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PHOENIX_DB_USER:-phoenix}
+      POSTGRES_PASSWORD: ${PHOENIX_DB_PASSWORD:-change-me}
+      POSTGRES_DB: ${PHOENIX_DB_NAME:-phoenix}
+    volumes:
+      - phoenix_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PHOENIX_DB_USER:-phoenix} -d ${PHOENIX_DB_NAME:-phoenix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - phoenix
+
+volumes:
+  phoenix_data:
+  phoenix_pg:
+
+networks:
+  phoenix:
+    driver: bridge
