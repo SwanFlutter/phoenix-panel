@@ -5,6 +5,7 @@
 # Usage:
 #   sudo ./install.sh docker      # build + run via docker compose (recommended)
 #   sudo ./install.sh native      # build a binary + install a systemd service
+#   sudo ./install.sh github      # clone from GitHub + install
 #
 # Run this from the root of the phoenix-panel source tree (where go.mod lives).
 # It is idempotent: safe to re-run to update an existing install.
@@ -14,6 +15,7 @@ set -euo pipefail
 GO_VERSION="1.22.5"
 INSTALL_DIR="/opt/phoenix"
 SERVICE_NAME="phoenix-panel"
+GITHUB_REPO="SwanFlutter/phoenix-panel"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log()  { printf '\033[1;36m[phoenix]\033[0m %s\n' "$*"; }
@@ -41,6 +43,33 @@ ensure_env() {
   fi
 }
 
+# Check if git is installed
+check_git() {
+  if ! command -v git >/dev/null 2>&1; then
+    log "installing git"
+    apt-get update -y
+    apt-get install -y git
+  else
+    log "git already installed: $(git --version)"
+  fi
+}
+
+# Clone or update repository from GitHub
+clone_from_github() {
+  local repo_dir="/opt/phoenix-panel-src"
+  
+  if [ -d "$repo_dir" ]; then
+    log "repository already exists at $repo_dir, updating..."
+    ( cd "$repo_dir" && git pull origin main )
+  else
+    log "cloning ${GITHUB_REPO} from GitHub..."
+    git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "$repo_dir"
+  fi
+  
+  SRC_DIR="$repo_dir"
+  log "repository ready at $SRC_DIR"
+}
+
 # ---------------- Docker path ----------------
 install_docker_engine() {
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -61,6 +90,8 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_C
 }
 
 run_docker() {
+  check_git
+  clone_from_github
   install_docker_engine
   ensure_env
   log "building and starting the stack via docker compose"
@@ -109,6 +140,8 @@ build_binary() {
 }
 
 install_native() {
+  check_git
+  clone_from_github
   build_binary
   ensure_env
 
@@ -156,7 +189,8 @@ main() {
   case "$mode" in
     docker) run_docker ;;
     native) install_native ;;
-    *) die "usage: sudo ./install.sh [docker|native]" ;;
+    github) clone_from_github && log "repository cloned successfully" ;;
+    *) die "usage: sudo ./install.sh [docker|native|github]" ;;
   esac
 }
 
