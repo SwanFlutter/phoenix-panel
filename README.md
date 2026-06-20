@@ -1,333 +1,366 @@
 # 🔥 PHOENIX PANEL
 
-A multi-protocol proxy subscription management panel. Manage users, nodes, and
-inbounds across **Xray-core** and **sing-box** from one API, and issue
-per-user subscription links (VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC).
+پنل مدیریت سابسکریپشن پروکسی چند-پروتکلی. مدیریت کاربران، نود‌ها و inbound‌ها روی
+**Xray-core** و **sing-box** از یک API، همراه با تولید لینک سابسکریپشن شخصی برای هر کاربر
+(VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC).
 
-**Repository:** [github.com/SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
+**مخزن:** [github.com/SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
 
-> **Status: foundation.** This repository currently contains the production-grade
-> backend foundation — config, database, auth, security middleware, the proxy-core
-> abstraction, link/subscription generation, and the REST API. The proxy-core
-> adapters (`internal/core/xray.go`, `internal/core/singbox.go`) are wired as
-> stubs at the gRPC/HTTP boundary, and the React frontend + OpenAPI spec are the
-> next phases. See [Roadmap](#roadmap).
+> **وضعیت: فاز پایه.** این مخزن شامل backend تولیدی است — config، database، auth، security middleware،
+> abstraction پروکسی کور، تولید لینک/سابسکریپشن، و REST API. آداپتورهای پروکسی کور
+> (`internal/core/xray.go`, `internal/core/singbox.go`) به‌صورت stub در مرز gRPC/HTTP
+> متصل شده‌اند. فرانت‌اند React و OpenAPI spec مراحل بعدی هستند. مراجعه کنید به [Roadmap](#roadmap).
 
 ---
 
-## Table of Contents
+## فهرست مطالب
 
-- [Architecture](#architecture)
-- [Installation](#installation)
-  - [Prerequisites](#prerequisites)
-  - [Method 1: Docker (Recommended)](#method-1-docker-recommended)
-  - [Method 2: Native Installation](#method-2-native-installation)
-  - [Method 3: GitHub Clone](#method-3-github-clone)
-  - [Automated Installation Script](#automated-installation-script)
-- [Configuration](#configuration)
-- [API Overview](#api-overview)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
+- [معماری](#معماری)
+- [نصب](#نصب)
+  - [پیش‌نیازها](#پیشنیازها)
+  - [روش ۱: Docker — یک دستور، نصب کامل](#روش-۱-docker--یک-دستور-نصب-کامل-)
+  - [روش ۲: نصب Native بدون Docker](#روش-۲-نصب-native-بدون-docker)
+- [حذف پنل](#حذف-پنل)
+- [تنظیمات](#تنظیمات)
+- [API](#api)
+- [امنیت](#امنیت)
+- [عیب‌یابی](#عیبیابی)
 - [Roadmap](#roadmap)
-- [License](#license)
 
 ---
 
-## Architecture
+## معماری
 
 ```
-cmd/phoenix            — server entrypoint (config → db → router → http)
+cmd/phoenix            — نقطه ورود سرور (config → db → router → http)
 internal/
-  config              — env-driven configuration + validation
-  models              — GORM models + domain types (User, Node, Inbound, …)
-  database            — connection (SQLite/Postgres), migrate, seed
-  security            — argon2id passwords, JWT, token/uuid generation
-  middleware          — auth, rate limiting, CORS, security headers, logging
-  audit               — security audit logging
-  core                — ProxyCore interface + Xray/sing-box adapters
-  links               — share-URL + subscription document generation
-  service             — business logic (users, auth, nodes, subscriptions)
-  api                 — Gin handlers, DTOs, router
-migrations            — canonical SQL schema (Postgres dialect)
+  config              — تنظیمات از env + اعتبارسنجی
+  models              — مدل‌های GORM + انواع دامنه (User, Node, Inbound, …)
+  database            — اتصال (SQLite/Postgres)، migrate، seed
+  security            — هش argon2id، JWT، تولید token/uuid
+  middleware          — auth، rate limiting، CORS، security headers، logging
+  audit               — لاگ audit امنیتی
+  core                — رابط ProxyCore + آداپتورهای Xray/sing-box
+  links               — تولید share-URL و سند سابسکریپشن
+  service             — منطق تجاری (users، auth، nodes، subscriptions)
+  api                 — هندلرهای Gin، DTO‌ها، router
+migrations            — schema SQL کانونیکال (PostgreSQL dialect)
 ```
 
-The layering is strict: `api` → `service` → `models`/`database`. Handlers never
-touch the DB directly; services own all invariants and transactions.
+لایه‌بندی سختگیرانه است: `api` → `service` → `models`/`database`.
+هندلرها مستقیماً با DB کار نمی‌کنند؛ سرویس‌ها تمام invariant‌ها و تراکنش‌ها را مدیریت می‌کنند.
 
 ---
 
-## Installation
+## نصب
 
-### Prerequisites
+### پیش‌نیازها
 
-Choose your installation method based on your needs:
+| روش | نیازمندی‌ها | سختی | سرعت |
+|-----|------------|------|------|
+| **Docker** ✅ پیشنهادی | فقط اینترنت + دسترسی root | آسان | سریع |
+| **Native** | Linux/Ubuntu، systemd | متوسط | معمولی |
 
-| Method | Requirements | Difficulty | Speed |
-|--------|--------------|-----------|-------|
-| **Docker** | Docker + Docker Compose | Easy | Fast |
-| **Native** | Linux/Ubuntu, Go 1.22+, systemd | Medium | Normal |
-| **GitHub** | Git, bash | Easy | Flexible |
+#### نیازمندی‌های سیستم
 
-#### System Requirements
+| مورد | حداقل | پیشنهادی |
+|------|-------|----------|
+| سیستم‌عامل | Ubuntu 20.04 / Debian 11 | Ubuntu 22.04 LTS |
+| CPU | 1 هسته | 2 هسته |
+| RAM | 512 MB | 1 GB |
+| دیسک | 2 GB | 10 GB |
+| پورت | 8080 (قابل تغییر) | 80/443 با reverse proxy |
 
-- **OS:** Linux (Ubuntu 20.04+ recommended)
-- **Memory:** Minimum 512 MB RAM
-- **Storage:** Minimum 2 GB free disk space
-- **Network:** Port 8080 (configurable via `.env`)
-
----
-
-### Method 1: Docker (Recommended)
-
-Docker is the easiest way to get started. No compilation needed.
-
-#### Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/SwanFlutter/phoenix-panel.git
-cd phoenix-panel
-```
-
-**Repository:** [SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
-
-#### Step 2: Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your settings:
-
-```bash
-# Required: set a strong JWT secret (32+ characters)
-PHOENIX_JWT_SECRET=$(openssl rand -hex 32)
-
-# Required: set admin password
-PHOENIX_ADMIN_PASSWORD=your-strong-password
-
-# Optional: set public base URL for subscriptions
-PHOENIX_BASE_URL=https://panel.your-domain.com
-
-# Optional: choose database (sqlite or postgres)
-PHOENIX_DB_DRIVER=sqlite
-```
-
-#### Step 3: Start with Docker Compose
-
-```bash
-docker compose up -d --build
-```
-
-#### Step 4: Verify Installation
-
-```bash
-# Check if container is running
-docker ps | grep phoenix-panel
-
-# Check logs
-docker compose logs -f panel
-
-# Test health endpoint
-curl http://localhost:8080/healthz
-```
-
-The panel will be available at: **`http://localhost:8080`**
-
-#### Stop the Service
-
-```bash
-docker compose down
-```
+> 💡 اسکریپت نصب فقط روی **Linux x86_64** و **ARM64** تست شده. Windows و macOS پشتیبانی نمی‌شوند.
 
 ---
 
-### Method 2: Native Installation
+### روش ۱: Docker — نصب کامل با یک دستور ✅
 
-For production deployments or when Docker is not available.
+تمام مراحل (Git، Docker، کلون مخزن، تنظیمات، build، راه‌اندازی) به صورت **خودکار** انجام می‌شود.
 
-#### Step 1: Install Go
-
-Requires **Go 1.22 or higher**:
+#### مرحله ۱ — وارد شدن به سرور
 
 ```bash
-# Check if Go is installed
-go version
-
-# If not installed, download from: https://go.dev/dl
+ssh root@YOUR_SERVER_IP
+# یا با sudo:
+sudo -i
 ```
 
-#### Step 2: Clone the Repository
+#### مرحله ۲ — اجرای اسکریپت نصب
 
 ```bash
-git clone https://github.com/SwanFlutter/phoenix-panel.git
-cd phoenix-panel
-```
-
-#### Step 3: Configure Environment
-
-```bash
-cp .env.example .env
-
-# Edit the file with your settings
-nano .env
-```
-
-#### Step 4: Build the Binary
-
-```bash
-make build
-# Binary will be created at: ./bin/phoenix
-```
-
-#### Step 5: Run Locally (Development)
-
-For testing purposes:
-
-```bash
-make run
-# Reads configuration from .env
-# Panel starts on http://localhost:8080
-```
-
-#### Step 6: Install as Systemd Service (Production)
-
-```bash
-sudo make install
-# or manually:
-sudo mkdir -p /opt/phoenix
-sudo cp bin/phoenix /opt/phoenix/
-sudo cp .env /opt/phoenix/
-sudo useradd --system --no-create-home phoenix || true
-sudo chown -R phoenix:phoenix /opt/phoenix
-```
-
-Create systemd service file at `/etc/systemd/system/phoenix-panel.service`:
-
-```ini
-[Unit]
-Description=PHOENIX PANEL
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=phoenix
-Group=phoenix
-WorkingDirectory=/opt/phoenix
-EnvironmentFile=/opt/phoenix/.env
-ExecStart=/opt/phoenix/phoenix
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable phoenix-panel
-sudo systemctl start phoenix-panel
-sudo systemctl status phoenix-panel
-```
-
-View logs:
-
-```bash
-sudo journalctl -u phoenix-panel -f
-```
-
----
-
-### Method 3: GitHub Clone
-
-Use the provided installation script for automated setup from GitHub.
-
-#### Quick Install via Script
-
-```bash
-# Download and run installation script
 bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) docker
 ```
 
-#### Using install.sh Locally
+> ⚠️ **نیاز به دسترسی root دارد.** اگر با کاربر معمولی هستید، ابتدا `sudo -i` بزنید.
 
-```bash
-# Clone the repository
-git clone https://github.com/SwanFlutter/phoenix-panel.git
-cd phoenix-panel
+#### مرحله ۳ — وارد کردن پسورد ادمین
 
-# Make script executable
-chmod +x install.sh
+اسکریپت پس از دانلود کد، این صفحه را نشان می‌دهد:
 
-# Run installation (choose one):
-sudo ./install.sh docker    # Install with Docker Compose
-sudo ./install.sh native    # Install as native systemd service
-sudo ./install.sh github    # Just clone the repository
+```
+  ╔══════════════════════════════════════════════════════╗
+  ║          تنظیم اولیه پنل فونیکس                     ║
+  ╚══════════════════════════════════════════════════════╝
+
+  🔑 پسورد ادمین (حداقل ۸ کاراکتر):
 ```
 
-**Script Location:** [install.sh](https://github.com/SwanFlutter/phoenix-panel/blob/main/install.sh)
+- پسورد را تایپ کنید (چیزی نمایش داده نمی‌شود — این طبیعی است)
+- Enter بزنید
+- اگر پسورد کمتر از ۸ کاراکتر باشد دوباره می‌پرسد
+
+#### مرحله ۴ — انتخاب آدرس پنل
+
+```
+  🌐  آدرس پایه پنل (برای لینک‌های سابسکریپشن استفاده می‌شود)
+
+    [1]  دامنه دارم و SSL دارد    (مثال: https://vpn.example.com)
+    [2]  ندارم — از IP و پورت پیش‌فرض استفاده کن  (http://1.2.3.4:8080)
+
+  انتخاب خود را وارد کنید [1/2]:
+```
+
+**گزینه ۱ — دامنه با SSL:**
+```
+  آدرس دامنه خود را وارد کنید (مثال: https://vpn.example.com): https://vpn.mydomain.com
+```
+- آدرس باید با `https://` شروع شود
+- قبل از نصب مطمئن شوید DNS دامنه به IP سرور اشاره می‌کند
+
+**گزینه ۲ — بدون دامنه:**
+- آدرس به صورت `http://IP_SERVER:8080` به طور خودکار تنظیم می‌شود
+- نیازی به وارد کردن چیزی نیست
+
+#### مرحله ۵ — build و راه‌اندازی خودکار
+
+اسکریپت بقیه کار را انجام می‌دهد:
+
+```
+[phoenix] ساخت image و راه‌اندازی با docker compose...
+ ✔ Container phoenix-panel-postgres-1  Started
+ ✔ Container phoenix-panel-panel-1     Started
+[phoenix] منتظر راه‌اندازی سرویس...
+```
+
+این مرحله بسته به سرعت اینترنت **۱ تا ۵ دقیقه** طول می‌کشد.
+
+#### مرحله ۶ — دریافت اطلاعات دسترسی
+
+پس از راه‌اندازی موفق، این خلاصه نمایش داده می‌شود:
+
+```
+╔══════════════════════════════════════════════════════════╗
+║        🎉  پنل فونیکس با موفقیت نصب شد                  ║
+╚══════════════════════════════════════════════════════════╝
+
+  ┌─ اطلاعات دسترسی ──────────────────────────────────────┐
+  │  آدرس پنل:            http://1.2.3.4:8080
+  │  لاگین ادمین:          http://1.2.3.4:8080/api/admin/login
+  │  بررسی سلامت:          http://1.2.3.4:8080/healthz
+  ├─ اطلاعات ورود ───────────────────────────────────────┤
+  │  نام کاربری:           admin
+  │  پسورد:                MySecurePass123
+  ├─ دستورات مفید ───────────────────────────────────────┤
+  │  مشاهده لاگ:           docker compose ... logs -f panel
+  │  ری‌استارت:             docker compose ... restart panel
+  │  توقف:                 docker compose ... down
+  │  آپدیت:                bash <(curl -fsSL ...) docker
+  └───────────────────────────────────────────────────────┘
+
+  ⚠  این اطلاعات را ذخیره کنید — پسورد دیگر نمایش داده نخواهد شد.
+```
+
+> 🔴 **این اطلاعات را همین جا کپی کنید.** پسورد بعداً قابل مشاهده نیست.
+
+#### مرحله ۷ — تأیید نصب
+
+```bash
+# بررسی سلامت سرویس
+curl http://localhost:8080/healthz
+# خروجی: {"status":"ok"}
+
+# بررسی وضعیت کانتینرها
+docker ps | grep phoenix
+# باید دو کانتینر panel و postgres در حال اجرا باشند
+```
+
+#### دستورات مدیریت Docker
+
+```bash
+# مشاهده لاگ‌های زنده
+docker compose -f /opt/phoenix-panel-src/docker-compose.yml logs -f panel
+
+# ری‌استارت سرویس
+docker compose -f /opt/phoenix-panel-src/docker-compose.yml restart panel
+
+# توقف کامل
+docker compose -f /opt/phoenix-panel-src/docker-compose.yml down
+
+# توقف و حذف داده‌ها (⚠️ برگشت‌ناپذیر)
+docker compose -f /opt/phoenix-panel-src/docker-compose.yml down --volumes
+
+# آپدیت به آخرین نسخه
+bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) docker
+```
 
 ---
 
-### Automated Installation Script
+### روش ۲: نصب Native (بدون Docker)
 
-The `install.sh` script automates the entire installation process:
+باینری Go مستقیماً روی سرور build شده و به‌عنوان **سرویس systemd** نصب می‌شود.
+مناسب برای سرورهایی که Docker ندارند یا می‌خواهید overhead کمتری داشته باشید.
 
-#### Features
-
-- ✅ Automatic Git installation
-- ✅ Automatic repository cloning/updating from GitHub
-- ✅ Docker engine installation (if using docker method)
-- ✅ Go installation (if using native method)
-- ✅ Automatic environment configuration
-- ✅ Systemd service setup
-- ✅ Health checks and verification
-
-#### Usage
+#### مرحله ۱ — وارد شدن به سرور
 
 ```bash
-# Docker installation (recommended)
-sudo ./install.sh docker
-
-# Native installation with systemd
-sudo ./install.sh native
-
-# Just clone from GitHub
-sudo ./install.sh github
+ssh root@YOUR_SERVER_IP
+sudo -i
 ```
 
-#### What the Script Does
+#### مرحله ۲ — اجرای اسکریپت نصب
 
-1. Checks for root privileges
-2. Installs Git if needed
-3. Clones/updates repository from [GitHub](https://github.com/SwanFlutter/phoenix-panel)
-4. Sets up required dependencies
-5. Generates secure secrets
-6. Configures environment
-7. Starts services
-8. Performs health checks
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) native
+```
+
+#### مرحله ۳ — وارد کردن تنظیمات
+
+دقیقاً مانند روش Docker — پسورد ادمین و آدرس پنل پرسیده می‌شود (مراحل ۳ و ۴ بالا).
+
+#### مرحله ۴ — build خودکار باینری
+
+اسکریپت Go 1.22 را نصب و باینری را build می‌کند:
+
+```
+[phoenix] نصب Go 1.22.5...
+[phoenix] ساخت باینری phoenix...
+[phoenix] ساخت کامل شد: /opt/phoenix-panel-src/bin/phoenix
+```
+
+این مرحله **۳ تا ۱۰ دقیقه** طول می‌کشد (بسته به سرعت اینترنت و CPU).
+
+#### مرحله ۵ — نصب و فعال‌سازی سرویس
+
+```
+[phoenix] نصب systemd unit...
+● phoenix-panel.service - PHOENIX PANEL
+     Loaded: loaded (/etc/systemd/system/phoenix-panel.service)
+     Active: active (running)
+```
+
+#### دستورات مدیریت Native
+
+```bash
+# وضعیت سرویس
+systemctl status phoenix-panel
+
+# مشاهده لاگ‌های زنده
+journalctl -u phoenix-panel -f
+
+# ری‌استارت
+systemctl restart phoenix-panel
+
+# توقف
+systemctl stop phoenix-panel
+
+# شروع دوباره
+systemctl start phoenix-panel
+
+# غیرفعال کردن autostart
+systemctl disable phoenix-panel
+
+# ویرایش تنظیمات
+nano /opt/phoenix/.env
+# بعد از ویرایش حتماً restart کنید:
+systemctl restart phoenix-panel
+```
+
+#### مسیرهای فایل‌ها (Native)
+
+| فایل | مسیر |
+|------|------|
+| باینری | `/opt/phoenix/phoenix` |
+| تنظیمات | `/opt/phoenix/.env` |
+| دیتابیس SQLite | `/opt/phoenix/data/phoenix.db` |
+| لاگ سرویس | `journalctl -u phoenix-panel` |
+| سرویس systemd | `/etc/systemd/system/phoenix-panel.service` |
 
 ---
 
-## Configuration
+## حذف پنل
 
-All configuration is via environment variables. See `.env.example` for the full list.
+برای حذف **کامل** پنل، تمام داده‌ها، کانتینرها و فایل‌های نصب:
 
-### Essential Configuration
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) uninstall
+```
 
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `PHOENIX_JWT_SECRET` | — | ✅ | Secret for JWT signing (≥32 chars). Generate: `openssl rand -hex 32` |
-| `PHOENIX_ADMIN_PASSWORD` | — | ✅ | Admin password (set on first boot) |
-| `PHOENIX_BASE_URL` | `http://localhost:8080` | ⚠️ | Public URL for subscription links |
-| `PHOENIX_DB_DRIVER` | `sqlite` | — | `sqlite` or `postgres` |
-| `PHOENIX_PORT` | `8080` | — | Listen port |
-| `PHOENIX_MODE` | `release` | — | `debug` or `release` |
+#### چه اتفاقی می‌افتد؟
 
-### Database Configuration
+ابتدا لیست کامل موارد حذف‌شدنی نمایش داده می‌شود:
 
-#### SQLite (Default)
+```
+⚠️   حذف پنل فونیکس
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  این عملیات موارد زیر را حذف می‌کند:
+    • سرویس systemd  (phoenix-panel)
+    • کانتینرهای Docker و image پنل
+    • فایل‌های نصب   (/opt/phoenix)
+    • سورس کد        (/opt/phoenix-panel-src)
+    • داده‌ها و دیتابیس  ⚠️  غیرقابل بازگشت
+
+  برای ادامه 'YES' تایپ کنید (برای انصراف هر چیز دیگری):
+```
+
+- برای **تأیید** دقیقاً `YES` (با حروف بزرگ) تایپ کنید
+- برای **انصراف** هر کلید دیگری (مثلاً Enter یا `no`) کافی است
+
+پس از تأیید، به ترتیب انجام می‌شود:
+
+1. سرویس systemd متوقف و حذف می‌شود
+2. کانتینرهای Docker و volume‌ها پاک می‌شوند
+3. Docker image پنل حذف می‌شود
+4. پوشه `/opt/phoenix` حذف می‌شود
+5. سورس کد `/opt/phoenix-panel-src` حذف می‌شود
+6. کاربر سیستمی `phoenix` حذف می‌شود
+
+```
+╔══════════════════════════════════════════════════════════╗
+║        🗑️   پنل فونیکس کاملاً حذف شد                    ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+> ⚠️ **هشدار:** تمام داده‌های کاربران، تنظیمات و دیتابیس پس از حذف قابل بازیابی **نیستند**. قبل از حذف از داده‌های مهم backup بگیرید.
+
+#### نصب مجدد پس از حذف
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) docker
+```
+
+---
+
+## تنظیمات
+
+تمام تنظیمات از طریق متغیرهای محیطی (`/opt/phoenix-panel-src/.env`) انجام می‌شود.
+فایل `.env.example` لیست کامل را دارد.
+
+### تنظیمات اصلی
+
+| متغیر | پیش‌فرض | اجباری | توضیح |
+|-------|---------|--------|-------|
+| `PHOENIX_JWT_SECRET` | — | ✅ | کلید JWT (حداقل ۳۲ کاراکتر). تولید: `openssl rand -hex 32` |
+| `PHOENIX_ADMIN_PASSWORD` | — | ✅ | پسورد ادمین (در اولین اجرا ساخته می‌شود) |
+| `PHOENIX_BASE_URL` | `http://localhost:8080` | ⚠️ | آدرس عمومی برای لینک‌های سابسکریپشن |
+| `PHOENIX_DB_DRIVER` | `sqlite` | — | `sqlite` یا `postgres` |
+| `PHOENIX_PORT` | `8080` | — | پورت listen |
+| `PHOENIX_MODE` | `release` | — | `debug` یا `release` |
+
+### تنظیمات دیتابیس
+
+#### SQLite (پیش‌فرض)
 
 ```bash
 PHOENIX_DB_DRIVER=sqlite
@@ -341,79 +374,74 @@ PHOENIX_DB_DRIVER=postgres
 PHOENIX_DB_HOST=localhost
 PHOENIX_DB_PORT=5432
 PHOENIX_DB_USER=phoenix
-PHOENIX_DB_PASSWORD=secure-password
+PHOENIX_DB_PASSWORD=your-secure-password
 PHOENIX_DB_NAME=phoenix
 ```
 
-### Security Configuration
+### تنظیمات امنیتی
 
 ```bash
-# JWT Secret (generate with: openssl rand -hex 32)
+# کلید JWT
 PHOENIX_JWT_SECRET=your-32-char-secret-here
 
-# JWT Token lifetime
+# مدت اعتبار توکن
 PHOENIX_JWT_TTL=24h
 
 # Rate limiting
-PHOENIX_RATE_RPS=20          # API requests per second per IP
-PHOENIX_LOGIN_RATE_RPS=1     # Login attempts per second per IP
+PHOENIX_RATE_RPS=20          # درخواست در ثانیه به ازای هر IP
+PHOENIX_LOGIN_RATE_RPS=1     # تلاش login در ثانیه به ازای هر IP
 
-# CORS origins
-PHOENIX_CORS_ORIGINS=*       # or specific domains comma-separated
-```
-
-### Proxy Core Configuration
-
-```bash
-# Default core for new inbounds
-PHOENIX_DEFAULT_CORE=xray    # or sing-box
+# CORS
+PHOENIX_CORS_ORIGINS=*       # یا دامنه‌های خاص با کاما جدا شده
 ```
 
 ---
 
-## API Overview
+## API
 
-The API requires JWT authentication for admin endpoints. Public endpoints (health, subscriptions) are accessible without authentication.
+برای endpoint‌های ادمین احراز هویت JWT لازم است. endpoint‌های عمومی (health، سابسکریپشن) بدون احراز هویت در دسترس هستند.
 
-### Authentication Endpoints
+### احراز هویت
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/admin/login` | — | Obtain a JWT token |
-| `GET` | `/api/admin/me` | Bearer | Get current admin info |
-| `POST` | `/api/admin/change-password` | Bearer | Change admin password |
+| متد | مسیر | Auth | توضیح |
+|-----|------|------|-------|
+| `POST` | `/api/admin/login` | — | دریافت توکن JWT |
+| `GET` | `/api/admin/me` | Bearer | اطلاعات ادمین جاری |
+| `POST` | `/api/admin/change-password` | Bearer | تغییر پسورد ادمین |
 
-### User Management
+### مدیریت کاربران
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/admin/users` | Bearer | List all users |
-| `POST` | `/api/admin/users` | Bearer | Create a new user |
-| `GET` | `/api/admin/users/:id` | Bearer | Get user details |
-| `PATCH` | `/api/admin/users/:id` | Bearer | Update user |
-| `DELETE` | `/api/admin/users/:id` | Bearer | Delete user |
-| `POST` | `/api/admin/users/:id/reset` | Bearer | Reset user traffic |
-| `POST` | `/api/admin/users/:id/regenerate-sub` | Bearer | Regenerate subscription token |
+| متد | مسیر | Auth | توضیح |
+|-----|------|------|-------|
+| `GET` | `/api/admin/users` | Bearer | لیست تمام کاربران |
+| `POST` | `/api/admin/users` | Bearer | ساخت کاربر جدید |
+| `GET` | `/api/admin/users/:id` | Bearer | جزئیات کاربر |
+| `PATCH` | `/api/admin/users/:id` | Bearer | ویرایش کاربر |
+| `DELETE` | `/api/admin/users/:id` | Bearer | حذف کاربر |
+| `POST` | `/api/admin/users/:id/reset` | Bearer | ریست ترافیک کاربر |
+| `POST` | `/api/admin/users/:id/regenerate-sub` | Bearer | تجدید توکن سابسکریپشن |
 
-### Node & Inbound Management
+### مدیریت نود و Inbound
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/admin/nodes` | Bearer | List all nodes |
-| `POST` | `/api/admin/nodes` | Bearer (sudo) | Create a node |
-| `GET`/`POST` | `/api/admin/inbounds` | Bearer (sudo) | Manage inbounds |
+| متد | مسیر | Auth | توضیح |
+|-----|------|------|-------|
+| `GET` | `/api/admin/nodes` | Bearer | لیست نودها |
+| `POST` | `/api/admin/nodes` | Bearer (sudo) | ساخت نود |
+| `DELETE` | `/api/admin/nodes/:id` | Bearer (sudo) | حذف نود |
+| `POST` | `/api/admin/inbounds` | Bearer (sudo) | ساخت inbound |
+| `DELETE` | `/api/admin/inbounds/:id` | Bearer (sudo) | حذف inbound |
 
-### Public Endpoints
+### endpoint‌های عمومی
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/sub/:token` | token | Get subscription document |
-| `GET` | `/healthz` | — | Health check |
-| `GET` | `/readyz` | — | Readiness check |
+| متد | مسیر | Auth | توضیح |
+|-----|------|------|-------|
+| `GET` | `/sub/:token` | token | دریافت سند سابسکریپشن |
+| `GET` | `/healthz` | — | بررسی سلامت |
+| `GET` | `/readyz` | — | بررسی آمادگی |
 
-### Example Usage
+### مثال‌های استفاده
 
-#### Login
+#### ورود و دریافت توکن
 
 ```bash
 TOKEN=$(curl -s http://localhost:8080/api/admin/login \
@@ -422,11 +450,9 @@ TOKEN=$(curl -s http://localhost:8080/api/admin/login \
     "username": "admin",
     "password": "your-admin-password"
   }' | jq -r .token)
-
-echo "Token: $TOKEN"
 ```
 
-#### Create a User
+#### ساخت کاربر
 
 ```bash
 curl -s http://localhost:8080/api/admin/users \
@@ -438,7 +464,7 @@ curl -s http://localhost:8080/api/admin/users \
   }' | jq
 ```
 
-#### Get Subscription
+#### دریافت سابسکریپشن
 
 ```bash
 curl -s http://localhost:8080/sub/YOUR_SUB_TOKEN
@@ -446,172 +472,140 @@ curl -s http://localhost:8080/sub/YOUR_SUB_TOKEN
 
 ---
 
-## Security
+## امنیت
 
-PHOENIX PANEL implements security best practices:
-
-- **Passwords:** Argon2id hashing (64 MiB, t=3, p=2), constant-time verification
-- **Tokens:** HS256 JWT with algorithm pinning; 24-byte unguessable subscription tokens
-- **Brute Force Protection:** Dedicated strict rate limit on `/api/admin/login`
-- **Transport Security:** CSP, HSTS, X-Frame-Options, nosniff headers
-- **Audit Trail:** All privileged actions logged in `audit_logs`
-- **Least Privilege:** Sudo vs admin roles; node/inbound mutations require sudo
-- **OWASP Compliance:** Follows OWASP Top 10 guidance throughout
+- **پسوردها:** هش Argon2id (64 MiB، t=3، p=2)، بررسی constant-time
+- **توکن‌ها:** JWT با HS256 و algorithm pinning؛ توکن‌های سابسکریپشن ۲۴ بایتی غیرقابل حدس
+- **محافظت Brute Force:** rate limit سختگیرانه روی `/api/admin/login`
+- **Security Headers:** CSP، HSTS، X-Frame-Options، nosniff
+- **Audit Trail:** تمام عملیات privileged در `audit_logs` ثبت می‌شود
+- **Least Privilege:** نقش‌های sudo vs admin؛ تغییر نود/inbound نیاز به sudo دارد
 
 ---
 
-## Troubleshooting
+## عیب‌یابی
 
-### Container won't start (Docker)
+### کانتینر راه‌اندازی نمی‌شود
 
 ```bash
-# Check logs
+# مشاهده لاگ‌ها
 docker compose logs panel
 
-# Common issues:
-# 1. Port already in use
-#    Solution: Change PHOENIX_PORT in .env
+# مشکلات رایج:
+# ۱. پورت در حال استفاده است
+#    راه‌حل: PHOENIX_PORT را در .env تغییر دهید
 
-# 2. Missing .env file
-#    Solution: cp .env.example .env && edit .env
+# ۲. فایل .env وجود ندارد
+#    راه‌حل: cp .env.example .env && nano .env
 
-# 3. Permission denied
-#    Solution: sudo docker compose up -d
+# ۳. خطای ساخت cmd/phoenix
+#    راه‌حل: مطمئن شوید آخرین کد را دارید (git pull)
 ```
 
-### Panel not accessible
+### پنل قابل دسترس نیست
 
 ```bash
-# Check if service is running
-docker ps | grep phoenix-panel
+# بررسی وضعیت سرویس
+docker ps | grep phoenix
 
-# Check if port is listening
+# بررسی پورت
 netstat -tlnp | grep 8080
 
-# Test health endpoint
+# تست health endpoint
 curl http://localhost:8080/healthz
 
-# If unreachable from another machine:
-# Edit .env: PHOENIX_BASE_URL=http://your-server-ip:8080
+# اگر از خارج قابل دسترس نیست:
+# PHOENIX_BASE_URL=http://your-server-ip:8080 را در .env تنظیم کنید
 ```
 
-### Database errors
+### خطای دیتابیس
 
 ```bash
-# For SQLite: check file permissions
+# SQLite: بررسی دسترسی فایل
 ls -la ./data/phoenix.db
 
-# For PostgreSQL: verify connection
+# PostgreSQL: بررسی اتصال
 psql -h localhost -U phoenix -d phoenix
 
-# Reset database (CAUTION: deletes all data)
-rm ./data/phoenix.db  # SQLite only
+# ریست دیتابیس (⚠️ تمام داده‌ها حذف می‌شوند)
+rm ./data/phoenix.db   # فقط SQLite
 ```
 
-### Can't login to admin panel
+### ورود به پنل ممکن نیست
 
 ```bash
-# Verify admin password is set in .env
-grep PHOENIX_ADMIN_PASSWORD .env
+# بررسی پسورد ادمین در .env
+grep PHOENIX_ADMIN_PASSWORD /opt/phoenix-panel-src/.env
 
-# Check application logs
+# مشاهده لاگ‌های login
 docker compose logs panel | grep -i login
-
-# The admin user is created on first boot
-# if no admins exist
 ```
 
-### High CPU/Memory usage
+### حذف و نصب مجدد
 
 ```bash
-# Check Go goroutines
-curl http://localhost:8080/debug/pprof/goroutine | head -5
+# حذف کامل
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) uninstall
 
-# Check memory
-curl http://localhost:8080/debug/pprof/heap | head -5
-
-# Monitor container resources
-docker stats phoenix-panel
+# نصب مجدد
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/SwanFlutter/phoenix-panel/main/install.sh) docker
 ```
 
 ---
 
-## Development
-
-### Local Development
+## توسعه
 
 ```bash
-# Install dependencies
+# نصب وابستگی‌ها
 make tidy
 
-# Run tests
+# اجرای تست‌ها
 make test
 
-# Run linter
+# اجرای linter
 make lint
 
-# Format code
-make fmt
-
-# Run locally
+# اجرای محلی
 make run
 ```
 
-### Project Structure
+### ساختار پروژه
 
-- `cmd/phoenix/` — Main application entry point
-- `internal/` — Core business logic and services
-- `migrations/` — Database migration files
-- `docker-compose.yml` — Docker Compose configuration
-- `Dockerfile` — Docker image definition
-- `install.sh` — Automated installation script
-
-### Makefile Targets
-
-```bash
-make help        # Show all available commands
-make build       # Build binary
-make run         # Run locally
-make test        # Run tests
-make vet         # Run go vet
-make fmt         # Format code
-make lint        # Run linter
-make docker-build # Build Docker image
-make up          # Start docker compose
-make down        # Stop docker compose
-make logs        # View container logs
+```
+cmd/phoenix/        — نقطه ورود اصلی
+internal/           — منطق تجاری و سرویس‌ها
+migrations/         — فایل‌های migration دیتابیس
+docker-compose.yml  — تنظیمات Docker Compose
+Dockerfile          — تعریف Docker image
+install.sh          — اسکریپت نصب خودکار
 ```
 
 ---
 
 ## Roadmap
 
-- [ ] Real Xray gRPC + sing-box management wiring in `internal/core`
-- [ ] Traffic-collection scheduler + per-user usage reconciliation
-- [ ] React + TypeScript admin dashboard & user panel (`/web`)
-- [ ] OpenAPI 3.1 spec + generated docs
-- [ ] Enhanced installer script with CI/CD pipeline
-- [ ] Admin & user guides
-- [ ] Kubernetes deployment manifests
-- [ ] Helm charts
+- [ ] اتصال واقعی Xray gRPC + sing-box در `internal/core`
+- [ ] scheduler جمع‌آوری ترافیک + تطبیق مصرف به ازای هر کاربر
+- [ ] داشبورد ادمین React + TypeScript و پنل کاربری (`/web`)
+- [ ] OpenAPI 3.1 spec + مستندات تولیدشده
+- [ ] راهنمای ادمین و کاربر
+- [ ] Kubernetes manifests و Helm charts
 
 ---
 
-## Repository Links
+## لینک‌های مفید
 
-- **Main Repository:** [github.com/SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
-- **Installation Script:** [install.sh on GitHub](https://github.com/SwanFlutter/phoenix-panel/blob/main/install.sh)
-- **Docker Image:** [Docker Compose Config](https://github.com/SwanFlutter/phoenix-panel/blob/main/docker-compose.yml)
-- **Issues & Bug Reports:** [GitHub Issues](https://github.com/SwanFlutter/phoenix-panel/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/SwanFlutter/phoenix-panel/discussions)
+- **مخزن اصلی:** [github.com/SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
+- **اسکریپت نصب:** [install.sh](https://github.com/SwanFlutter/phoenix-panel/blob/main/install.sh)
+- **گزارش مشکل:** [GitHub Issues](https://github.com/SwanFlutter/phoenix-panel/issues)
 
 ---
 
 ## License
 
-To be determined by the project owner.
+در انتظار تصمیم صاحب پروژه.
 
 ---
 
-**Last Updated:** 2026-06-15  
-**Repository:** [SwanFlutter/phoenix-panel on GitHub](https://github.com/SwanFlutter/phoenix-panel)
+**آخرین به‌روزرسانی:** ۱۴۰۵/۰۳/۳۰  
+**مخزن:** [SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
