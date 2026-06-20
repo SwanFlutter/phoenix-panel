@@ -34,13 +34,77 @@ ensure_env() {
     secret="$(openssl rand -hex 32)"
     sed -i "s|^PHOENIX_JWT_SECRET=.*|PHOENIX_JWT_SECRET=${secret}|" "$SRC_DIR/.env"
     log "generated a random PHOENIX_JWT_SECRET"
-    err "IMPORTANT: edit $SRC_DIR/.env and set PHOENIX_ADMIN_PASSWORD, PHOENIX_BASE_URL,"
-    err "and PHOENIX_DB_PASSWORD before the panel will start correctly."
   fi
-  # Hard fail early if the admin password is still empty.
-  if ! grep -qE '^PHOENIX_ADMIN_PASSWORD=.+' "$SRC_DIR/.env"; then
-    die "PHOENIX_ADMIN_PASSWORD is empty in .env — set it, then re-run."
+
+  # ── Interactive prompts ──────────────────────────────────────────────────
+  # Collect required values that are still at their placeholder defaults.
+
+  # 1. PHOENIX_ADMIN_PASSWORD
+  local cur_pass
+  cur_pass="$(grep -E '^PHOENIX_ADMIN_PASSWORD=' "$SRC_DIR/.env" | cut -d= -f2-)"
+  if [ -z "$cur_pass" ] || [ "$cur_pass" = "admin-change-me" ]; then
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "  SETUP — enter your panel admin credentials"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    local admin_pass=""
+    while [ -z "$admin_pass" ]; do
+      read -rsp "  Admin password (min 8 chars): " admin_pass
+      echo ""
+      if [ "${#admin_pass}" -lt 8 ]; then
+        err "  Password too short — must be at least 8 characters."
+        admin_pass=""
+      fi
+    done
+    sed -i "s|^PHOENIX_ADMIN_PASSWORD=.*|PHOENIX_ADMIN_PASSWORD=${admin_pass}|" "$SRC_DIR/.env"
+    log "  ✔ admin password saved"
   fi
+
+  # 2. PHOENIX_BASE_URL
+  local cur_url
+  cur_url="$(grep -E '^PHOENIX_BASE_URL=' "$SRC_DIR/.env" | cut -d= -f2-)"
+  if [ -z "$cur_url" ] || [ "$cur_url" = "https://panel.example.com" ]; then
+    echo ""
+    log "  Enter the public URL of this server (used for subscription links)."
+    log "  Example: https://vpn.mydomain.com   or   http://1.2.3.4:8080"
+    local base_url=""
+    while [ -z "$base_url" ]; do
+      read -rp "  Base URL: " base_url
+      if [[ ! "$base_url" =~ ^https?:// ]]; then
+        err "  URL must start with http:// or https://"
+        base_url=""
+      fi
+    done
+    base_url="${base_url%/}"   # strip trailing slash
+    sed -i "s|^PHOENIX_BASE_URL=.*|PHOENIX_BASE_URL=${base_url}|" "$SRC_DIR/.env"
+    log "  ✔ base URL saved"
+  fi
+
+  # 3. PHOENIX_DB_PASSWORD  (only needed when driver=postgres)
+  local cur_driver
+  cur_driver="$(grep -E '^PHOENIX_DB_DRIVER=' "$SRC_DIR/.env" | cut -d= -f2-)"
+  if [ "$cur_driver" = "postgres" ]; then
+    local cur_dbpass
+    cur_dbpass="$(grep -E '^PHOENIX_DB_PASSWORD=' "$SRC_DIR/.env" | cut -d= -f2-)"
+    if [ -z "$cur_dbpass" ] || [ "$cur_dbpass" = "change-me" ]; then
+      echo ""
+      log "  PostgreSQL is selected as the database driver."
+      local db_pass=""
+      while [ -z "$db_pass" ]; do
+        read -rsp "  Database password for user 'phoenix': " db_pass
+        echo ""
+        if [ -z "$db_pass" ]; then
+          err "  Database password cannot be empty."
+        fi
+      done
+      sed -i "s|^PHOENIX_DB_PASSWORD=.*|PHOENIX_DB_PASSWORD=${db_pass}|" "$SRC_DIR/.env"
+      log "  ✔ database password saved"
+    fi
+  fi
+
+  echo ""
+  log "configuration complete — .env is ready."
+  echo ""
 }
 
 # Check if git is installed
@@ -142,8 +206,8 @@ build_binary() {
 install_native() {
   check_git
   clone_from_github
-  build_binary
   ensure_env
+  build_binary
 
   id phoenix >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin phoenix
   mkdir -p "$INSTALL_DIR/data"
