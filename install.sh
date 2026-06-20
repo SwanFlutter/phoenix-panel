@@ -380,8 +380,11 @@ uninstall_panel() {
   echo ""
 
   local confirm=""
-  read_input "  برای ادامه 'YES' تایپ کنید (برای انصراف هر چیز دیگری): " confirm
-  if [ "$confirm" != "YES" ]; then
+  read_input "  برای ادامه yes/YES تایپ کنید (برای انصراف هر چیز دیگری): " confirm
+  # حروف بزرگ و کوچک هر دو قبول می‌شوند
+  local confirm_lower
+  confirm_lower="$(echo "$confirm" | tr '[:upper:]' '[:lower:]')"
+  if [ "$confirm_lower" != "yes" ]; then
     log "عملیات لغو شد."
     exit 0
   fi
