@@ -18,12 +18,66 @@ SERVICE_NAME="phoenix-panel"
 GITHUB_REPO="SwanFlutter/phoenix-panel"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-log()  { printf '\033[1;36m[phoenix]\033[0m %s\n' "$*"; }
-err()  { printf '\033[1;31m[phoenix:error]\033[0m %s\n' "$*" >&2; }
-die()  { err "$*"; exit 1; }
+log()     { printf '\033[1;36m[phoenix]\033[0m %s\n' "$*"; }
+err()     { printf '\033[1;31m[phoenix:error]\033[0m %s\n' "$*" >&2; }
+die()     { err "$*"; exit 1; }
+success() { printf '\033[1;32m%s\033[0m\n' "$*"; }
+bold()    { printf '\033[1m%s\033[0m\n' "$*"; }
 
 require_root() {
   [ "$(id -u)" -eq 0 ] || die "please run as root (sudo ./install.sh ...)"
+}
+
+# ── Post-install summary ─────────────────────────────────────────────────────
+print_summary() {
+  local mode="$1"   # docker | native
+
+  # Read values from the .env that was written during ensure_env
+  local admin_user admin_pass base_url port
+  admin_user="$(grep -E '^PHOENIX_ADMIN_USERNAME=' "$SRC_DIR/.env" | cut -d= -f2-)"
+  admin_pass="$(grep -E '^PHOENIX_ADMIN_PASSWORD='  "$SRC_DIR/.env" | cut -d= -f2-)"
+  base_url="$(grep   -E '^PHOENIX_BASE_URL='        "$SRC_DIR/.env" | cut -d= -f2-)"
+  port="$(grep       -E '^PHOENIX_PORT='            "$SRC_DIR/.env" | cut -d= -f2-)"
+  admin_user="${admin_user:-admin}"
+  port="${port:-8080}"
+
+  # Derive a panel URL: prefer PHOENIX_BASE_URL, fall back to server IP
+  local panel_url="$base_url"
+  if [ -z "$panel_url" ] || [ "$panel_url" = "https://panel.example.com" ]; then
+    local server_ip
+    server_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    panel_url="http://${server_ip}:${port}"
+  fi
+
+  echo ""
+  echo ""
+  success "╔══════════════════════════════════════════════════════════╗"
+  success "║          🎉  PHOENIX PANEL INSTALLED SUCCESSFULLY         ║"
+  success "╚══════════════════════════════════════════════════════════╝"
+  echo ""
+  bold   "  ┌─ ACCESS INFORMATION ──────────────────────────────────┐"
+  printf "  │  %-20s  \033[1;33m%s\033[0m\n" "Panel URL:"      "$panel_url"
+  printf "  │  %-20s  \033[1;33m%s\033[0m\n" "Admin API:"      "$panel_url/api/admin/login"
+  printf "  │  %-20s  \033[1;33m%s\033[0m\n" "Health check:"   "$panel_url/healthz"
+  bold   "  ├─ CREDENTIALS ────────────────────────────────────────┤"
+  printf "  │  %-20s  \033[1;32m%s\033[0m\n" "Username:"       "$admin_user"
+  printf "  │  %-20s  \033[1;32m%s\033[0m\n" "Password:"       "$admin_pass"
+  bold   "  ├─ USEFUL COMMANDS ────────────────────────────────────┤"
+  if [ "$mode" = "docker" ]; then
+    printf "  │  %-20s  %s\n" "View logs:"    "docker compose -f $SRC_DIR/docker-compose.yml logs -f panel"
+    printf "  │  %-20s  %s\n" "Restart:"      "docker compose -f $SRC_DIR/docker-compose.yml restart panel"
+    printf "  │  %-20s  %s\n" "Stop:"         "docker compose -f $SRC_DIR/docker-compose.yml down"
+    printf "  │  %-20s  %s\n" "Update:"       "bash <(curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPO/main/install.sh) docker"
+  else
+    printf "  │  %-20s  %s\n" "View logs:"    "journalctl -u $SERVICE_NAME -f"
+    printf "  │  %-20s  %s\n" "Restart:"      "systemctl restart $SERVICE_NAME"
+    printf "  │  %-20s  %s\n" "Stop:"         "systemctl stop $SERVICE_NAME"
+    printf "  │  %-20s  %s\n" "Config file:"  "$INSTALL_DIR/.env"
+  fi
+  bold   "  └───────────────────────────────────────────────────────┘"
+  echo ""
+  printf "  \033[1;31m⚠  Save these credentials — the password will not be shown again.\033[0m\n"
+  echo ""
 }
 
 ensure_env() {
@@ -163,7 +217,7 @@ run_docker() {
   log "waiting for health..."
   for _ in $(seq 1 30); do
     if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
-      log "panel is healthy at http://localhost:8080"
+      print_summary "docker"
       return
     fi
     sleep 2
@@ -244,7 +298,7 @@ UNIT
   systemctl enable --now "${SERVICE_NAME}"
   sleep 2
   systemctl --no-pager status "${SERVICE_NAME}" || true
-  log "done. logs: journalctl -u ${SERVICE_NAME} -f"
+  print_summary "native"
 }
 
 main() {
