@@ -362,14 +362,108 @@ UNIT
   print_summary "native"
 }
 
+# ── حذف کامل پنل (uninstall) ─────────────────────────────────────────────
+uninstall_panel() {
+  reattach_tty
+
+  echo ""
+  err  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  err  "  ⚠️   حذف پنل فونیکس"
+  err  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "  این عملیات موارد زیر را حذف می‌کند:"
+  echo "    • سرویس systemd  (${SERVICE_NAME})"
+  echo "    • کانتینرهای Docker و image پنل"
+  echo "    • فایل‌های نصب   (${INSTALL_DIR})"
+  echo "    • سورس کد        (/opt/phoenix-panel-src)"
+  echo "    • داده‌ها و دیتابیس  ⚠️  غیرقابل بازگشت"
+  echo ""
+
+  local confirm=""
+  read_input "  برای ادامه 'YES' تایپ کنید (برای انصراف هر چیز دیگری): " confirm
+  if [ "$confirm" != "YES" ]; then
+    log "عملیات لغو شد."
+    exit 0
+  fi
+
+  echo ""
+  log "شروع حذف..."
+
+  # ── ۱. توقف و حذف سرویس systemd ────────────────────────────────────────
+  if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    log "توقف سرویس ${SERVICE_NAME}..."
+    systemctl stop "${SERVICE_NAME}" || true
+  fi
+  if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    log "غیرفعال کردن سرویس ${SERVICE_NAME}..."
+    systemctl disable "${SERVICE_NAME}" || true
+  fi
+  if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+    rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+    systemctl daemon-reload
+    log "  ✔ سرویس systemd حذف شد"
+  fi
+
+  # ── ۲. توقف و حذف Docker containers/images ──────────────────────────────
+  local src_dir="/opt/phoenix-panel-src"
+  if command -v docker >/dev/null 2>&1; then
+    if [ -f "$src_dir/docker-compose.yml" ]; then
+      log "توقف و حذف کانتینرهای Docker..."
+      ( cd "$src_dir" && docker compose down --volumes --remove-orphans 2>/dev/null ) || true
+      log "  ✔ کانتینرها و volume‌ها حذف شدند"
+    fi
+    # حذف image پنل
+    if docker image inspect phoenix-panel:latest >/dev/null 2>&1; then
+      docker rmi phoenix-panel:latest 2>/dev/null || true
+      log "  ✔ Docker image حذف شد"
+    fi
+  fi
+
+  # ── ۳. حذف فایل‌های نصب ─────────────────────────────────────────────────
+  if [ -d "${INSTALL_DIR}" ]; then
+    rm -rf "${INSTALL_DIR}"
+    log "  ✔ دایرکتوری ${INSTALL_DIR} حذف شد"
+  fi
+
+  # ── ۴. حذف سورس کد ──────────────────────────────────────────────────────
+  if [ -d "$src_dir" ]; then
+    rm -rf "$src_dir"
+    log "  ✔ سورس کد /opt/phoenix-panel-src حذف شد"
+  fi
+
+  # ── ۵. حذف کاربر سیستمی phoenix ─────────────────────────────────────────
+  if id phoenix >/dev/null 2>&1; then
+    userdel phoenix 2>/dev/null || true
+    log "  ✔ کاربر سیستمی phoenix حذف شد"
+  fi
+
+  echo ""
+  success "╔══════════════════════════════════════════════════════════╗"
+  success "║        🗑️   پنل فونیکس کاملاً حذف شد                    ║"
+  success "╚══════════════════════════════════════════════════════════╝"
+  echo ""
+  log "برای نصب مجدد:"
+  info "  bash <(curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/install.sh) docker"
+  echo ""
+}
+
 main() {
   require_root
   local mode="${1:-}"
   case "$mode" in
-    docker) run_docker ;;
-    native) install_native ;;
-    github) clone_from_github && log "مخزن با موفقیت کلون شد" ;;
-    *) die "نحوه استفاده: sudo ./install.sh [docker|native|github]" ;;
+    docker)     run_docker ;;
+    native)     install_native ;;
+    github)     clone_from_github && log "مخزن با موفقیت کلون شد" ;;
+    uninstall)  uninstall_panel ;;
+    *)
+      echo ""
+      bold "  نحوه استفاده:"
+      echo "    sudo bash <(curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/install.sh) docker"
+      echo "    sudo bash <(curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/install.sh) native"
+      echo "    sudo bash <(curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/install.sh) uninstall"
+      echo ""
+      die "گزینه نامعتبر: '${mode}'"
+      ;;
   esac
 }
 
