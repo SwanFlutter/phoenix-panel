@@ -40,6 +40,7 @@ WORKDIR /app
 RUN mkdir -p /app/data && chown -R phoenix:phoenix /app
 
 COPY --from=build /out/phoenix /app/phoenix
+COPY --from=build /src/web     /app/web
 
 USER phoenix
 

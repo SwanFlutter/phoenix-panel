@@ -61,6 +61,15 @@ func NewRouter(d Dependencies) *gin.Engine {
 	r.GET("/healthz", healthH.Live)
 	r.GET("/readyz", healthH.Ready)
 
+	// Web UI — serve the single-page dashboard from ./web/
+	r.Static("/web", "./web")
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/web/")
+	})
+	r.GET("/web", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/web/")
+	})
+
 	// Public subscription endpoint — token-authenticated, lightly rate limited.
 	r.GET("/sub/:token",
 		middleware.RateLimit(d.Cfg.Rate.RPS, d.Cfg.Rate.Burst),
