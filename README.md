@@ -609,3 +609,4 @@ install.sh          — اسکریپت نصب خودکار
 
 **آخرین به‌روزرسانی:** ۱۴۰۵/۰۳/۳۰  
 **مخزن:** [SwanFlutter/phoenix-panel](https://github.com/SwanFlutter/phoenix-panel)
+
